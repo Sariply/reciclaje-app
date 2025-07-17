@@ -1,8 +1,8 @@
-streamlit
+streamlit==1.35.0
 tensorflow==2.10.0
-numpy
-pillow
-tensorflow
-geopy
-folium
-streamlit-folium
+numpy==1.23.5
+pillow==9.5.0
+h5py==3.7.0
+geopy==2.3.0
+folium==0.14.0
+streamlit-folium==0.13.0
