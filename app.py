@@ -7,11 +7,12 @@ from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import folium
 from streamlit_folium import st_folium
+import os
 
 # 🌿 Configuración general
 st.set_page_config(page_title="Clasificador de Reciclaje", layout="wide")
 
-# 🍃 Estilo visual con fondo de bosque lluvioso
+# 🌄 Estilo personalizado
 st.markdown("""
 <style>
     .stApp {
@@ -39,7 +40,6 @@ st.markdown("""
     }
     .stButton>button:hover {
         background-color: #4f7158;
-        color: white;
     }
     .sidebar .sidebar-content {
         background-color: rgba(17, 28, 24, 0.9);
@@ -50,8 +50,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 🧠 Cargar modelo
-modelo = load_model("modelo_reciclaje.h5")
-
+modelo_path = "modelo_reciclaje.h5"
+if os.path.exists(modelo_path):
+    modelo = load_model(modelo_path)
+else:
+    st.error(f"❌ No se encontró el modelo `{modelo_path}`. Sube el archivo correctamente antes de ejecutar la app.")
+    st.stop()
 
 # ♻️ ───── Categorías y descripciones ─────
 categorias = [
@@ -101,14 +105,6 @@ descripciones = {
     'Punto_limpio - Toner_y_cartuchos_de_impresora': '🖨️ Cartuchos de tinta y tóner: contaminantes y reciclables. Nunca en restos.',
     'Punto_SIGRE - Medicamentos_y_envases': '💊 Medicamentos caducados y sus envases se depositan en puntos SIGRE (en farmacias).'
 }
-
-# 🧠 Sidebar izquierda: Cómo se recicla
-st.sidebar.header("🧠 Cómo se recicla")
-st.sidebar.markdown("""
-<div style="background-color: rgba(60, 83, 70, 0.3); padding: 8px; border-radius: 10px; margin-bottom: 1em;">
-📚 Aprende sobre el reciclaje seleccionando un material para ver enlaces educativos y procesos.
-</div>
-""", unsafe_allow_html=True)
 
 materiales = {
     "Orgánico": "https://dkv.es/corporativo/blog-360/medioambiente/reciclaje/residuos-organicos",
@@ -196,44 +192,48 @@ procesos = {
     }, 
 }
 
-for material, url in materiales.items():
+# Inicializar session_state si es necesario
+if "material_elegido" not in st.session_state:
+    st.session_state["material_elegido"] = None
+
+for material in materiales:
     if st.sidebar.button(f"🔎 {material}"):
         st.session_state["material_elegido"] = material
+
+# Sidebar izquierda
+st.sidebar.header("🧠 Cómo se recicla")
+st.sidebar.markdown("""<div style="background-color: rgba(60, 83, 70, 0.3); padding: 8px; border-radius: 10px; margin-bottom: 1em;">📚 Aprende sobre el reciclaje seleccionando un material para ver enlaces educativos y procesos.</div>""", unsafe_allow_html=True)
+
+for material in materiales:
+    if st.sidebar.button(f"🔎 {material}"):
+        st.session_state["material_elegido"] = material
+
         
-# 🧭 Estructura de tres columnas
+# Columnas
 col1, col2, col3 = st.columns([1, 2, 1])
 
-# Columna izquierda: Información de el reciclaje de un material.
+# Proceso de reciclaje (col1)
 with col1:
     st.title("🧪 Proceso de reciclaje")
-    material_elegido = st.session_state.get("material_elegido", None)
-    if material_elegido and material_elegido in procesos:
+    material_elegido = st.session_state.get("material_elegido")
+    if material_elegido in procesos:
         info = procesos[material_elegido]
-        st.markdown("""
-        <div style="
-            background-color: rgba(60, 83, 70, 0.4);
-            border-left: 6px solid #a2cfa5;
-            padding: 10px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
-        ">
-        <h3 style="color:#d5eadd">📋​ Material: {}</h3>
-        <p style="color:#e0e0e0; font-size: 1.05em;">{}</p>
-        <a href="{}" target="_blank" style="color:#c1e9d8; font-weight:bold;">
-        👉 Más información oficial
-        </a>
+        st.markdown(f"""
+        <div style="background-color: rgba(60, 83, 70, 0.4); border-left: 6px solid #a2cfa5; padding: 10px; border-radius: 10px; margin-bottom: 20px; box-shadow: 2px 2px 6px rgba(0,0,0,0.2);">
+            <h3 style="color:#d5eadd">📋 Material: {material_elegido}</h3>
+            <p style="color:#e0e0e0; font-size: 1.05em;">{info["descripcion"]}</p>
+            <a href="{info["link"]}" target="_blank" style="color:#c1e9d8; font-weight:bold;">👉 Más información oficial</a>
         </div>
-        """.format(material_elegido, info["descripcion"], info["link"]), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-# 🟨 Columna central: Proceso de reciclaje + Clasificador
+# Clasificador de reciclaje (col2)
 with col2:
     st.title("♻️ Clasificador de Reciclaje Inteligente")
-
     imagen_subida = st.file_uploader("📸 Sube tu imagen aquí", type=["jpg", "jpeg", "png"])
+
     if imagen_subida is not None:
         try:
-            img = Image.open(imagen_subida)
+            img = Image.open(imagen_subida).convert("RGB")
             img = img.resize((150, 150))
             img_array = keras_image.img_to_array(img) / 255.0
             img_array = np.expand_dims(img_array, axis=0)
@@ -243,9 +243,9 @@ with col2:
                 st.error(f"🚫 El modelo devuelve {prediccion.shape[1]} clases, pero hay {len(categorias)} definidas.")
             else:
                 top_indices = np.argsort(prediccion[0])[::-1][:2]
-                i1, i2 = top_indices[0], top_indices[1]
-                clase_principal = categorias[i1]
+                i1, i2 = top_indices
                 confianza_principal = prediccion[0][i1]
+                clase_principal = categorias[i1]
                 descripcion_principal = descripciones.get(clase_principal, "ℹ️ (Sin descripción disponible)")
 
                 st.success(f"✅ Categoría recomendada: **{clase_principal.replace('_', ' ').title()}**")
@@ -266,21 +266,14 @@ with col2:
     else:
         st.info("📎 Sube una imagen para comenzar el proceso de clasificación.")
 
-# ---- Columna lateral - Geolocalización de puntos limpios.
+# Geolocalización (col3)
 with col3:
     st.markdown("""
-    <div style="
-        background-color: rgba(60, 83, 70, 0.4);
-        border-left: 6px solid #a2cfa5;
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 25px;
-        box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
-    ">
-    <h4 style="color:#d5eadd">📍 Encuentra tu punto limpio</h4>
-    <p style="color:#e0e0e0; font-size: 1.05em;">
-    Escribe tu ciudad o dirección para localizar tu ubicación y acceder a los puntos limpios cercanos.
-    </p>
+    <div style="background-color: rgba(60, 83, 70, 0.4); border-left: 6px solid #a2cfa5; padding: 15px; border-radius: 10px; margin-bottom: 25px; box-shadow: 2px 2px 6px rgba(0,0,0,0.2);">
+        <h4 style="color:#d5eadd">📍 Encuentra tu punto limpio</h4>
+        <p style="color:#e0e0e0; font-size: 1.05em;">
+        Escribe tu ciudad o dirección para localizar tu ubicación y acceder a los puntos limpios cercanos.
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -293,32 +286,19 @@ with col3:
 
             if ubicacion:
                 st.success(f"📍 Ubicación detectada: {ubicacion.address}")
-
-                # 🔗 Botón visual para abrir Google Maps con búsqueda de puntos limpios
                 query = f"punto limpio cerca de {ubicacion.address}"
                 url_google_maps = f"https://www.google.com/maps/search/{query.replace(' ', '+')}"
 
                 st.markdown(f"""
                 <div style="margin-top:15px; text-align: center;">
                     <a href="{url_google_maps}" target="_blank" style="text-decoration: none;">
-                        <div style="
-                            display: inline-block;
-                            background-color: #6b8e74;
-                            color: white;
-                            padding: 10px 20px;
-                            border-radius: 6px;
-                            font-size: 16px;
-                            font-weight: bold;
-                            box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
-                            transition: background-color 0.3s ease;
-                        " onmouseover="this.style.backgroundColor='#4f7158'" onmouseout="this.style.backgroundColor='#6b8e74'">
+                        <div style="background-color: #6b8e74; color: white; padding: 10px 20px; border-radius: 6px; font-size: 16px; font-weight: bold; box-shadow: 2px 2px 6px rgba(0,0,0,0.3);">
                             🗺️ Abrir mapa completo
                         </div>
                     </a>
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Mostrar mapa con marcador de ubicación
                 mapa = folium.Map(location=[ubicacion.latitude, ubicacion.longitude], zoom_start=13)
                 folium.Marker(
                     [ubicacion.latitude, ubicacion.longitude],
@@ -327,9 +307,8 @@ with col3:
                 ).add_to(mapa)
 
                 st_folium(mapa, width=300, height=250)
-
             else:
-                st.error("❌ No se pudo encontrar esa ubicación. Intenta con una dirección más precisa.")
+                st.warning("❌ No se pudo encontrar esa ubicación. Intenta con una dirección más precisa.")
         except Exception as e:
             st.error("🚨 Error al conectar con el servicio de geolocalización.")
             st.write(f"🛠️ Detalle técnico: `{e}`")
