@@ -50,7 +50,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 🧠 Cargar modelo
-modelo_path = "modelo_reciclaje.h5"
+modelo_path = "modelo.h5"
 if os.path.exists(modelo_path):
     modelo = load_model(modelo_path)
 else:
